@@ -1,0 +1,3 @@
+/Users/nexus9971/Desktop/Life/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/Users/nexus9971/Desktop/Life/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/nexus9971/Desktop/Life/cmake-build-debug/CMakeFiles/Life.dir
