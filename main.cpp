@@ -1,12 +1,18 @@
 #include <iostream>
+#include <cmath>
 #include <random>
 #include <unordered_map>
+#include <stdio.h>
 
-const unsigned int width = 20;
-const unsigned int height = 20;
+const unsigned int width = 100;
+const unsigned int height = 100;
 const unsigned int nCells = width * height;
+const float density = 0.5;
+const float prob = 0.015;
+const int ntry = 1;
 unsigned int livingcells = 0;
-bool permutation = true;
+const int maxiter = 1000000;
+bool permutation = false;
 
 void SetCell(unsigned int x, unsigned int y, unsigned char* life){
     *(life+x*width+y) |= 0x01;
@@ -233,56 +239,119 @@ void Permutation(unsigned char* life){
     }
 }
 
+void Visualize(FILE *gp, unsigned char* life, int k, int iterations) {
+    fprintf(gp, "set title 't=%d'\n", iterations);
+    fprintf(gp, "plot '-' w image\n");
+    for (int i=0; i<height; i++) {
+        for (int j=0; j<width; j++) {
+            fprintf(gp, "%d %d %d\n", i, j, life[i*width+j] & 0x01);
+        }
+        fprintf(gp, "\n");
+    }
+    //fprintf(gp, "'pause -1'\n");
+    fprintf(gp, "e\n");
+    fflush(gp);
+}
+
+void Graph(FILE *gp, float* densityvect){
+    fprintf(gp, "set title 'Average Living Cells'\n");
+    fprintf(gp, "set logscale xy\n");;
+    fprintf(gp, "plot '-' w lines\n");
+    for (int i = 0; i < maxiter; ++i) {
+        if (densityvect[i] != 0){
+            fprintf(gp, "%d %f\n",i, densityvect[i]/ntry);
+        }
+    }
+    //fprintf(gp, "'pause -1'\n");
+    fprintf(gp, "set term png\n");
+    fprintf(gp, "set output 'graph.png'\n");
+    fprintf(gp, "e\n");
+    fflush(gp);
+}
+
 int main() {
     std::unordered_map<std::string, unsigned int> patterns;
     unsigned char* life;
     life = (unsigned char*)malloc(nCells*sizeof(unsigned char));
-    float density = 0.25;
-
+    float* densityvect = (float*) malloc(maxiter*sizeof(float));
+    memset(densityvect, 0, maxiter*sizeof(float));
     std::random_device rd;  // Will be used to obtain a seed for the random number engine
     std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
     std::uniform_real_distribution<float>  distr(0, 1);
-    memset(life, 0, nCells*sizeof(unsigned char));
-    for (unsigned int i = 0; i < height; ++i) {
-        for (unsigned int j = 0; j < width; ++j) {
-            if (distr(generator) <= density){
-                SetCell(i, j, life);
+    FILE *gp;
+    gp = popen("gnuplot", "w");
+    fprintf(gp, "unset key; set cbrange [0:1]\n");
+
+    for (int n = 0; n < ntry; ++n) {
+        float* densityptr = densityvect;
+        memset(life, 0, nCells * sizeof(unsigned char));
+        for (unsigned int i = 0; i < height; ++i) {
+            for (unsigned int j = 0; j < width; ++j) {
+                if (distr(generator) <= density) {
+                    SetCell(i, j, life);
+                }
             }
         }
-    }
-    patterns[PatternReduce(life)] = 0;
-    Draw(life);
-    double d = livingcells/((double)nCells);
-    printf("Density living cells: %f", d);
-    printf("\n\n");
-    int k = 0, p = 0;
-    bool loop = false;
-    do{
-        //NextGeneration(life);
-        //NextGenerationIdentity(life, 0.28);
-        NextGenerationZero(life, 0.028);
-        Draw(life);
-        d = livingcells/((double)nCells);
-        printf("Density living cells: %f", d);
+        patterns[PatternReduce(life)] = 0;
+        //Draw(life);
+        Visualize(gp, life, 5, 0);
+        *densityptr += livingcells;
+        densityptr++;
+        double d = livingcells / ((double) nCells);
+        printf("Density living cells: %f",d);
         printf("\n\n");
-        std::string temp = PatternReduce(life);
-        //Cerchiamo nella tabella hash se la configurazione è già presente, altrimenti la inseriamo
-        if(patterns.find(temp) == patterns.end()){
-            patterns[temp] = k;
+        int k = 0;
+        bool loop = false;
+        do {
+            //NextGeneration(life);
+            //NextGenerationIdentity(life, prob);
+            NextGenerationZero(life, prob);
+            *densityptr += livingcells;
+            densityptr++;
+            Visualize(gp, life, 5, k + 1);
+            //Draw(life);
+            d = livingcells / ((double) nCells);
+            printf("Density living cells: %f", d);
+            printf("\n\n");
+            std::string temp = PatternReduce(life);
+            //Cerchiamo nella tabella hash se la configurazione è già presente, altrimenti la inseriamo
+            if (patterns.find(temp) == patterns.end()) {
+                patterns[temp] = k;
+            } else {
+                loop = true;
+            }
+            k++;
+            if (loop && permutation) {
+                printf("Loop found after %d iterations\n", k);
+                printf("Let's permutate\n");
+                patterns.clear();
+                *densityptr = d;
+                densityptr++;
+                k = 0;
+                Permutation(life);
+                Draw(life);
+                loop = false;
+                permutation = false;
+            }
+        } while (!loop && k<maxiter);
+        patterns.clear();
+        livingcells = 0;
+        permutation = true;
+        if (k < maxiter){
+            printf("Asymptotic state retarded by %d iterations", k);
         }else{
-            loop = true;
+            printf("Max iterations exceeded");
         }
-        k++;
-        if(loop && p == 0){
-            printf("Loop found after %d iterations\n", k);
-            printf("Let's permutate\n");
-            patterns.clear();
-            k = 0;
-            Permutation(life);
-            Draw(life);
-            loop = false;
-            p++;
+    }
+    printf("\n");
+    fprintf(gp, "clear\n");
+    while(true){
+        Graph(gp, densityvect);
+    }
+
+    /*for (int i = 0; i < maxiter; ++i) {
+        if (densityvect[i] != 0){
+            printf("%f - %f\n", densityvect[i]/ntry, log10(densityvect[i]/ntry));
         }
-    }while(!loop);
-    printf("Asymptotic state retarded by %d iterations", k);
+    }*/
 }
